@@ -8,7 +8,7 @@ const router = Router();
 function sanitizeProfessionalUser(u) {
   if (!u) return u;
   const { phone, passwordHash, ...rest } = u; // ✅ remove phone + passwordHash
-  return rest;
+  return rest; // ✅ includes ratingAvg, ratingCount
 }
 
 router.get("/", async (req, res) => {
@@ -18,7 +18,7 @@ router.get("/", async (req, res) => {
   if (city) filter.city = new RegExp(city, "i");
   if (q) filter.name = new RegExp(q, "i");
 
-  // ✅ still keep passwordHash removed
+  // passwordHash remove, phone removal handled by sanitize
   const pros = await User.find(filter).select("-passwordHash").lean();
   const ids = pros.map((p) => p._id);
 
@@ -27,12 +27,15 @@ router.get("/", async (req, res) => {
 
   const merged = pros
     .map((p) => ({
-      ...sanitizeProfessionalUser(p), // ✅ phone removed in list
+      ...sanitizeProfessionalUser(p), // ✅ phone removed; rating fields stay
       professional: map.get(p._id.toString()) || null,
     }))
     .filter((p) => {
       if (!category) return true;
-      return (p.professional?.category || "").toLowerCase() === String(category).toLowerCase();
+      return (
+        (p.professional?.category || "").toLowerCase() ===
+        String(category).toLowerCase()
+      );
     });
 
   res.json({ professionals: merged });
@@ -51,7 +54,6 @@ router.get("/:id", async (req, res) => {
 
   const professional = await ProfessionalProfile.findOne({ userId: user._id }).lean();
 
-  // ✅ phone removed in detail response too
   res.json({ user: sanitizeProfessionalUser(user), professional });
 });
 

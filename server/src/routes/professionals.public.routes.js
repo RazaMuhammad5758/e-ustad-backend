@@ -4,6 +4,12 @@ import ProfessionalProfile from "../models/ProfessionalProfile.js";
 
 const router = Router();
 
+function sanitize(u) {
+  if (!u) return u;
+  const { phone, passwordHash, ...rest } = u; // ✅ remove sensitive fields
+  return rest; // ✅ ratingAvg, ratingCount stay
+}
+
 /**
  * Public list: ONLY ACTIVE professionals
  * Supports q, city, category
@@ -22,7 +28,7 @@ router.get("/", async (req, res) => {
     if (q) userFilter.name = { $regex: q, $options: "i" };
     if (city) userFilter.city = city;
 
-    // ✅ If category filter exists, we will filter profiles, then map back to users
+    // ✅ If category filter exists, filter profiles then map to users
     if (category) {
       const profiles = await ProfessionalProfile.find({ category })
         .select("userId")
@@ -44,7 +50,7 @@ router.get("/", async (req, res) => {
 
     return res.json({
       professionals: pros.map((p) => ({
-        ...p,
+        ...sanitize(p),
         professional: map.get(p._id.toString()) || null,
       })),
     });
