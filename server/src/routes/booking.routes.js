@@ -3,6 +3,8 @@ import Booking from "../models/Booking.js";
 import User from "../models/User.js";
 import { requireAuth } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
+import Notification from "../models/Notification.js";
+import { emitToUser } from "../socket.js";
 
 const router = Router();
 
@@ -40,8 +42,7 @@ function parseRating(x) {
 }
 
 /**
- * ✅ Atomic rating update (race-condition safe)
- * MongoDB 4.2+ required for update pipeline.
+ * ✅ Non-pipeline avg update (simple + safe)
  */
 async function applyUserRating(userId, rating) {
   const u = await User.findById(userId).select("ratingAvg ratingCount");
@@ -91,6 +92,31 @@ router.post(
         professionalRatedAt: null,
       });
 
+      // ✅ NEW: notify PROFESSIONAL instantly (real-time)
+      try {
+        const clientName = req.user?.name || "A client";
+
+        const n = await Notification.create({
+          userId: professionalId,
+          type: "booking.requested",
+          title: "New Booking Request",
+          message: `${clientName} sent you a booking request.`,
+          link: "/requests",
+        });
+
+        emitToUser(professionalId, "notification:new", {
+          _id: n._id,
+          type: n.type,
+          title: n.title,
+          message: n.message,
+          link: n.link,
+          readAt: n.readAt,
+          createdAt: n.createdAt,
+        });
+      } catch (e) {
+        console.log("PRO NOTIFY (BOOKING CREATE) ERROR:", e?.message || e);
+      }
+
       return res.json({ booking });
     } catch (e) {
       console.log("BOOKING CREATE ERROR:", e);
@@ -99,7 +125,7 @@ router.post(
   }
 );
 
-// ✅ CLIENT → VIEW MY SENT REQUESTS (FIXED)
+// ✅ CLIENT → VIEW MY SENT REQUESTS
 router.get("/client", requireAuth, requireClient, async (req, res) => {
   try {
     const items = await Booking.find({ clientId: req.user._id })
@@ -137,7 +163,6 @@ router.get("/client", requireAuth, requireClient, async (req, res) => {
     return res.status(500).json({ message: "Failed to load bookings" });
   }
 });
-
 
 // ✅ PROFESSIONAL → VIEW REQUESTS
 router.get("/professional", requireAuth, requireProfessional, async (req, res) => {
@@ -220,6 +245,28 @@ router.post("/:id/status", requireAuth, requireProfessional, async (req, res) =>
     }
 
     await booking.save();
+
+    // ✅ existing: notify CLIENT on accept
+    if (status === "accepted") {
+      const n = await Notification.create({
+        userId: booking.clientId,
+        type: "booking.accepted",
+        title: "Booking Accepted",
+        message: "Your booking request has been accepted by the professional.",
+        link: "/my-bookings",
+      });
+
+      emitToUser(booking.clientId, "notification:new", {
+        _id: n._id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        link: n.link,
+        readAt: n.readAt,
+        createdAt: n.createdAt,
+      });
+    }
+
     return res.json({ ok: true });
   } catch (e) {
     console.log("STATUS UPDATE ERROR:", e);
@@ -246,6 +293,25 @@ router.post("/:id/task-complete", requireAuth, requireProfessional, async (req, 
     booking.taskStatus = "completed";
     booking.completedAt = new Date();
     await booking.save();
+    // ✅ notify client: task completed
+const n = await Notification.create({
+  userId: booking.clientId,
+  type: "booking.completed",
+  title: "Task Completed",
+  message: "Your booking task has been marked as completed by the professional.",
+  link: "/my-bookings",
+});
+
+emitToUser(booking.clientId, "notification:new", {
+  _id: n._id,
+  type: n.type,
+  title: n.title,
+  message: n.message,
+  link: n.link,
+  readAt: n.readAt,
+  createdAt: n.createdAt,
+});
+
 
     return res.json({ ok: true });
   } catch (e) {
@@ -278,9 +344,46 @@ router.post("/:id/rate/client", requireAuth, requireClient, async (req, res) => 
     booking.clientRating = rating;
     booking.clientRatedAt = new Date();
     await booking.save();
+    // ✅ notify professional: got rated
+const nPro = await Notification.create({
+  userId: booking.professionalId,
+  type: "rating.received",
+  title: "You received a rating",
+  message: "A client has rated you for a completed booking.",
+  link: "/dashboard",
+});
+
+emitToUser(booking.professionalId, "notification:new", {
+  _id: nPro._id,
+  type: nPro.type,
+  title: nPro.title,
+  message: nPro.message,
+  link: nPro.link,
+  readAt: nPro.readAt,
+  createdAt: nPro.createdAt,
+});
+
+// ✅ notify client: rating submitted (optional but you asked both)
+const nClient = await Notification.create({
+  userId: booking.clientId,
+  type: "rating.submitted",
+  title: "Rating Submitted",
+  message: "Your rating has been submitted successfully.",
+  link: "/my-bookings",
+});
+
+emitToUser(booking.clientId, "notification:new", {
+  _id: nClient._id,
+  type: nClient.type,
+  title: nClient.title,
+  message: nClient.message,
+  link: nClient.link,
+  readAt: nClient.readAt,
+  createdAt: nClient.createdAt,
+});
+
 
     const updatedUserRating = await applyUserRating(booking.professionalId, rating);
-
     return res.json({ ok: true, updatedUserRating });
   } catch (e) {
     console.log("CLIENT RATE ERROR:", e);
@@ -312,9 +415,46 @@ router.post("/:id/rate/professional", requireAuth, requireProfessional, async (r
     booking.professionalRating = rating;
     booking.professionalRatedAt = new Date();
     await booking.save();
+    // ✅ notify client: got rated
+const nClient = await Notification.create({
+  userId: booking.clientId,
+  type: "rating.received",
+  title: "You received a rating",
+  message: "A professional has rated you for a completed booking.",
+  link: "/dashboard",
+});
+
+emitToUser(booking.clientId, "notification:new", {
+  _id: nClient._id,
+  type: nClient.type,
+  title: nClient.title,
+  message: nClient.message,
+  link: nClient.link,
+  readAt: nClient.readAt,
+  createdAt: nClient.createdAt,
+});
+
+// ✅ notify professional: rating submitted (optional but you asked both)
+const nPro = await Notification.create({
+  userId: booking.professionalId,
+  type: "rating.submitted",
+  title: "Rating Submitted",
+  message: "Your rating has been submitted successfully.",
+  link: "/requests",
+});
+
+emitToUser(booking.professionalId, "notification:new", {
+  _id: nPro._id,
+  type: nPro.type,
+  title: nPro.title,
+  message: nPro.message,
+  link: nPro.link,
+  readAt: nPro.readAt,
+  createdAt: nPro.createdAt,
+});
+
 
     const updatedUserRating = await applyUserRating(booking.clientId, rating);
-
     return res.json({ ok: true, updatedUserRating });
   } catch (e) {
     console.log("PRO RATE ERROR:", e);

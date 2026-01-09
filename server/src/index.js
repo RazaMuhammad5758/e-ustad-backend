@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { connectDB } from "./config/db.js";
 import path from "path";
+import http from "http";
 
 import adminRoutes from "./routes/admin.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -12,6 +13,10 @@ import bookingRoutes from "./routes/booking.routes.js";
 import gigRoutes from "./routes/gig.routes.js";
 import professionalMeRoutes from "./routes/professional.me.routes.js";
 import gigCommentRoutes from "./routes/gigComment.routes.js";
+
+// ✅ NEW
+import notificationRoutes from "./routes/notification.routes.js";
+import { initSocket } from "./socket.js";
 
 dotenv.config();
 
@@ -44,11 +49,19 @@ app.use("/api/gig-comments", gigCommentRoutes);
 app.use("/api/professional", professionalMeRoutes);
 app.use("/api/admin", adminRoutes);
 
+// ✅ NEW route
+app.use("/api/notifications", notificationRoutes);
+
 const port = process.env.PORT || 5000;
+
+// ✅ http server + socket
+const server = http.createServer(app);
 
 connectDB()
   .then(() => {
-    app.listen(port, () => console.log(`✅ Server running on ${port}`));
+    initSocket(server);
+
+    server.listen(port, () => console.log(`✅ Server running on ${port}`));
   })
   .catch((e) => {
     console.error("❌ DB connect failed:", e.message);
