@@ -136,7 +136,7 @@ router.post("/register/client", maybeUploadSingle("profilePic"), async (req, res
 
 // ✅ PROFESSIONAL register (multipart)
 router.post(
-  "/register/professional",
+  "/register",
   upload.fields([
     { name: "profilePic", maxCount: 1 },
     { name: "cnicPic", maxCount: 1 },

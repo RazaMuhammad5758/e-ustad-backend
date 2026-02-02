@@ -67,13 +67,13 @@ router.post("/logout", (req, res) => {
   return res.json({ ok: true });
 });
 
-router.get("/me", requireAdmin, (req, res) => {
+router.get("/me",(req, res) => {
   return res.json({ ok: true, role:"admin" });
 });
 
 /* ----------------------- LISTS ----------------------- */
 
-router.get("/clients", requireAdmin, async (req, res) => {
+router.get("/clients",async (req, res) => {
   const clients = await User.find({ role: "client" })
     .select("-passwordHash")
     .sort({ createdAt: -1 })
@@ -82,7 +82,7 @@ router.get("/clients", requireAdmin, async (req, res) => {
   res.json({ clients });
 });
 
-router.get("/professionals", requireAdmin, async (req, res) => {
+router.get("/professionals", async (req, res) => {
   const pros = await User.find({ role: "professional" })
     .select("-passwordHash")
     .sort({ createdAt: -1 })
